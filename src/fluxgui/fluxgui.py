@@ -1,4 +1,5 @@
-#!/usr/bin/python
+#!/usr/bin/python2.7
+
 import appindicator
 import errno
 import gtk
@@ -9,7 +10,8 @@ import pexpect
 import os
 from xdg.DesktopEntry import DesktopEntry
 
-VERSION = "1.1.8"
+
+__version__ = "1.1.8"
 
 
 class Fluxgui:
@@ -22,7 +24,7 @@ class Fluxgui:
         self.start_xflux(self.settings.latitude, self.settings.longitude,
                          self.settings.zipcode, self.settings.color)
 
-        if self.settings.latitude is "" and self.settings.zipcode is "":
+        if not self.settings.latitude and not self.settings.zipcode:
             self.open_preferences("activate")
 
     def check_pid(self):
@@ -80,7 +82,7 @@ class Fluxgui:
             # xflux is not running
             try:
                 self.xflux.terminate(force=True)
-            except Exception, e:
+            except Exception:
                 # xflux has crashed in the meantime?
                 pass
 
@@ -130,7 +132,7 @@ class Fluxgui:
             #create autostart dir
             try:
                 os.mkdir(autostart_dir)
-            except Exeption, e:
+            except Exception, e:
                 print "creation of autostart dir failed, please make it yourself: %s" % autostart_dir
                 raise e
 
@@ -260,18 +262,18 @@ class Preferences:
         self.closebutton.connect("clicked", self.delete_event)
 
         self.autostart = self.wTree.get_widget("checkbutton1")
-        if self.main.settings.autostart is "1":
+        if self.main.settings.autostart == "1":
             self.autostart.set_active(True)
         else:
             self.autostart.set_active(False)
 
-        if self.main.settings.latitude is ""\
-           and self.main.settings.zipcode is "":
-            md = gtk.MessageDialog(self.window,
-                gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO,
-                gtk.BUTTONS_OK, "The f.lux indicator applet needs to know " +
-                "your latitude and longitude or zipcode to work correctly. " +
-        "Please fill either of them in on the next screen and then hit enter.")
+        if not self.main.settings.latitude and not self.main.settings.zipcode:
+            message = ("The f.lux indicator applet needs to know your latitude "
+                       "and longitude or zipcode to work correctly. Please "
+                       "fill either of them in on the next screen and then hit "
+                       "enter.")
+            md = gtk.MessageDialog(self.window, gtk.DIALOG_DESTROY_WITH_PARENT,
+                                   gtk.MESSAGE_INFO, gtk.BUTTONS_OK, message)
             md.set_title("f.lux indicator applet")
             md.run()
             md.destroy()
@@ -357,20 +359,20 @@ class Settings:
 
     def get_color(self, colortemp):
         color = "3400"
-        if colortemp is "0":
-            #tungsten
+        if colortemp == "0":
+            # Tungsten
             color = "2700"
-        elif colortemp is "1":
-            #halogen
+        elif colortemp == "1":
+            # Halogen
             color = "3400"
-        elif colortemp is "2":
-            #fluorescent
+        elif colortemp == "2":
+            # Fluorescent
             color = "4200"
-        elif colortemp is "3":
-            #daylight
+        elif colortemp == "3":
+            # Daylight
             color = "5000"
-        elif colortemp is "4":
-            #off
+        elif colortemp == "4":
+            # Off
             color = "6500"
 
         return color
