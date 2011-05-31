@@ -1,5 +1,7 @@
 #!/usr/bin/python2.7
 
+"""A GUI applet for xflux."""
+
 import appindicator
 import errno
 import gtk
@@ -49,12 +51,12 @@ class Fluxgui(object):
             # Check for process existence.
             os.kill(oldpid, 0)
             running = True
-        except IOError, e:
-            if e.errno != errno.ENOENT:
-                Warn('Failed to open pid file: %s' % e)
-        except OSError, e:
-            if e.errno != errno.ESRCH:
-                Warn(e)
+        except IOError, err:
+            if err.errno != errno.ENOENT:
+                Warn('Failed to open pid file: %s' % err)
+        except OSError, err:
+            if err.errno != errno.ESRCH:
+                Warn(err)
         except ValueError:
             # Corrupt pid_file, empty or not an int on first line.
             pass
@@ -183,10 +185,8 @@ class Indicator(object):
     def __init__(self, fluxgui):
         self.fluxgui = fluxgui
 
-        self.indicator = appindicator.Indicator(
-          'fluxgui-indicator',
-          'fluxgui',
-          appindicator.CATEGORY_APPLICATION_STATUS)
+        self.indicator = appindicator.Indicator('fluxgui-indicator',
+          'fluxgui', appindicator.CATEGORY_APPLICATION_STATUS)
         self.indicator.set_status(appindicator.STATUS_ACTIVE)
 
         # Check for special Ubuntu themes (copied from lookit).
@@ -295,20 +295,24 @@ class Preferences(object):
                        'and longitude or zipcode to work correctly. Please '
                        'fill either of them in on the next screen and then hit '
                        'enter.')
-            md = gtk.MessageDialog(self.window, gtk.DIALOG_DESTROY_WITH_PARENT,
-                                   gtk.MESSAGE_INFO, gtk.BUTTONS_OK, message)
-            md.set_title('f.lux indicator applet')
-            md.run()
-            md.destroy()
+            dialog = gtk.MessageDialog(self.window,
+                        gtk.DIALOG_DESTROY_WITH_PARENT, gtk.MESSAGE_INFO,
+                        gtk.BUTTONS_OK, message)
+            dialog.set_title('f.lux indicator applet')
+            dialog.run()
+            dialog.destroy()
 
     def show(self, unused_widget=None):
+        """Shows the preferences window."""
         self.window.present()
 
     def hide(self, unused_widget=None):
-        self.update_settings()
+        """Hides the preferences window and saves settings."""
+        self._update_settings()
         self.window.hide()
 
-    def update_settings(self):
+    def _update_settings(self):
+        """Saves the preferences settings to the settings file."""
         changed = False
         if self.fluxgui.settings.latitude != self.lat_setting.get_text():
             self.fluxgui.settings.latitude = self.lat_setting.get_text()
@@ -418,10 +422,14 @@ class Settings(object):
         return Settings.get_temperature_from_index(self.color_index)
 
 
-if __name__ == '__main__':
+def main():
+    """Main entry point."""
     try:
         app = Fluxgui()
         app.run()
     except KeyboardInterrupt:
         app.exit()
 
+
+if __name__ == '__main__':
+    main()
