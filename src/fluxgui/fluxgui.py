@@ -86,8 +86,11 @@ class Fluxgui(object):
 
         xflux = None
         try:
+            # Terminate existing xfluxes to avoid conflict.
             os.system('killall xflux > /dev/null 2>&1')
             xflux = pexpect.spawn('/usr/bin/xflux', args)
+
+            # Wait to see if xflux immediately terminated.
             time.sleep(0.1)
             if not xflux.isalive():
                 if '-z' in args or '-l' in args:
@@ -111,30 +114,6 @@ class Fluxgui(object):
         if self.xflux:
             self.xflux.terminate(force=True)
             self.xflux = None
-
-    def get_current_color_temp(self):
-        """Returns the current color temperature from xflux."""
-        if self.xflux:
-            if not self.xflux.isalive():
-                Warn('xflux has exited unexpectedly.')
-                self.xflux = None
-                return
-            self.xflux.sendline('c')
-            index = self.xflux.expect('Color.*')
-            if index == 0:
-                return int(self.xflux.after[10:14])
-        return None
-
-    def preview_xflux(self, unused_widget=None):
-        if not self.xflux.isalive():
-            Warn('xflux has exited unexpectedly.')
-            self.xflux = None
-            return
-
-        temperature = Settings.get_temperature_from_index(
-                        self.preferences.color_setting.get_active())
-        self.xflux.sendline('k=%d' % temperature)
-        self.xflux.sendline('p')
 
     # Autostart code copied from AWN.
     def _get_autostart_file_path(self):
@@ -280,11 +259,7 @@ class Preferences(object):
         self.color_setting = self.window_tree.get_widget('combobox1')
         self.color_setting.set_active(int(self.fluxgui.settings.color_index))
 
-        self.color_display = self.window_tree.get_widget('label6')
-        self._update_temperature()
-
-        self.preview_button = self.window_tree.get_widget('button1')
-        self.preview_button.connect('clicked', self.fluxgui.preview_xflux)
+        self.commandline_display = self.window_tree.get_widget('label6')
 
         self.close_button = self.window_tree.get_widget('button2')
         self.close_button.connect('clicked', self.hide)
@@ -305,16 +280,19 @@ class Preferences(object):
             dialog.run()
             dialog.destroy()
 
-    def _update_temperature(self):
-        temperature = self.fluxgui.get_current_color_temp()
-        if temperature:
-            self.color_display.set_text('Current color temperature: '
-                                        + str(temperature) + 'K')
-
     def show(self, unused_widget=None):
         """Shows the preferences window."""
         self.window.present()
-        self._update_temperature()
+
+        # Update command line display.
+        text = None
+        if self.fluxgui.xflux:
+            text = 'Current commandline: xflux '
+            text += ' '.join(self.fluxgui.xflux.args[1:-1])
+        else:
+            text = 'xflux is not currently running'
+        self.commandline_display.set_text(text)
+
 
     def hide(self, unused_widget=None):
         """Hides the preferences window and saves settings."""
