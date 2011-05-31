@@ -14,6 +14,9 @@ from xdg.DesktopEntry import DesktopEntry
 __version__ = '1.1.8'
 
 
+def Warn(message):
+    sys.stderr.write('Warning: %s\n' % message)
+
 class Fluxgui:
     def __init__(self):
         self.pid_file = None
@@ -24,7 +27,7 @@ class Fluxgui:
         self.preferences = None
 
         self.xflux = None
-        self._start_xflux()
+        self.start_xflux()
 
         if not self.settings.latitude and not self.settings.zipcode:
             # Open preferences so user can enter settings.
@@ -37,29 +40,32 @@ class Fluxgui:
         pid_file = os.path.expanduser('~/.fluxgui.pid')
 
         running = False
-        if os.path.isfile(pid_file):
-          try:
+        try:
             oldpid = int(open(pid_file).readline().rstrip())
-            try:
-              # Check for process existence.
-              os.kill(oldpid, 0)
-              running = True
-            except OSError as err:
-              if err.errno == errno.ESRCH:
-                # OSError: [Errno 3] No such process
-                print 'stale pid_file, old pid: ', oldpid
-          except ValueError:
-            # Corrupt pid_file, empty or not an int on first line
+            # Check for process existence.
+            os.kill(oldpid, 0)
+            running = True
+        except IOError, e:
+            if e.errno != errno.ENOENT:
+                Warn('Failed to open pid file: %s' % e)
+        except OSError, e:
+            if e.errno != errno.ESRCH:
+                Warn(e)
+        except ValueError:
+            # Corrupt pid_file, empty or not an int on first line.
             pass
 
         if running:
-          print 'fluxgui is already running, exiting'
-          sys.exit()
-        else:
-          file(pid_file, 'w').write('%d\n' % pid)
-          self.pid_file = pid_file
+            print 'Fluxgui is already running, exiting.'
+            sys.exit()
 
-    def _start_xflux(self):
+        try:
+            file(pid_file, 'w').write('%d\n' % pid)
+            self.pid_file = pid_file
+        except IOError, e:
+            Warn('Failed to write pid file: %s' % e)
+
+    def start_xflux(self, unused_widget=None):
         """Starts xflux with the settings from the settings file."""
         args = []
         if self.settings.zipcode:
@@ -84,7 +90,7 @@ class Fluxgui:
             self.exit()
         self.xflux = xflux
 
-    def _stop_xflux(self):
+    def stop_xflux(self, unused_widget=None):
         """Stops xflux."""
         self.indicator.show_unpause()
 
@@ -92,16 +98,9 @@ class Fluxgui:
             self.xflux.terminate(force=True)
             self.xflux = None
 
-    def on_pause_xflux(self, unused_widget=None):
-        self._stop_xflux()
-
-    def on_unpause_xflux(self, unused_widget=None):
-        self._start_xflux()
-        print self.xflux.isalive()
-
     def update_xflux(self, command):
         if self.xflux is None:
-            self._start_xflux()
+            self.start_xflux()
         self.xflux.sendline(command)
 
     def get_current_color_temp(self):
@@ -160,7 +159,7 @@ class Fluxgui:
 
     def exit(self, unused_object=None):
         """Exits the application."""
-        self._stop_xflux()
+        self.stop_xflux()
         os.unlink(self.pid_file)
         gtk.main_quit()
         sys.exit(0)
@@ -168,8 +167,8 @@ class Fluxgui:
 
 class Indicator:
 
-    def __init__(self, main):
-        self.main = main
+    def __init__(self, fluxgui):
+        self.fluxgui = fluxgui
 
         self.indicator = appindicator.Indicator(
           'fluxgui-indicator',
@@ -178,19 +177,18 @@ class Indicator:
         self.indicator.set_status(appindicator.STATUS_ACTIVE)
 
         # Check for special Ubuntu themes (copied from lookit).
-        theme = None
         try:
             default = gtk.gdk.screen_get_default()
             theme = default.get_setting('gtk-icon-theme-name')
         except:
-            pass
-
-        if theme == 'ubuntu-mono-dark':
-          self.indicator.set_icon('fluxgui-dark')
-        elif theme == 'ubuntu-mono-light':
-            self.indicator.set_icon('fluxgui-light')
-        else:
             self.indicator.set_icon('fluxgui')
+        else:
+            if theme == 'ubuntu-mono-dark':
+              self.indicator.set_icon('fluxgui-dark')
+            elif theme == 'ubuntu-mono-light':
+                self.indicator.set_icon('fluxgui-light')
+            else:
+                self.indicator.set_icon('fluxgui')
 
         self.pause_item = None
         self.unpause_item = None
@@ -200,17 +198,17 @@ class Indicator:
         menu = gtk.Menu()
 
         pause_item = gtk.MenuItem('_Pause f.lux')
-        pause_item.connect('activate', self.main.on_pause_xflux)
+        pause_item.connect('activate', self.fluxgui.stop_xflux)
         pause_item.show()
         menu.append(pause_item)
 
         unpause_item = gtk.MenuItem('_Unpause f.lux')
-        unpause_item.connect('activate', self.main.on_unpause_xflux)
+        unpause_item.connect('activate', self.fluxgui.start_xflux)
         unpause_item.hide()
         menu.append(unpause_item)
 
         prefs_item = gtk.MenuItem('_Preferences')
-        prefs_item.connect('activate', self.main.open_preferences)
+        prefs_item.connect('activate', self.fluxgui.open_preferences)
         prefs_item.show()
         menu.append(prefs_item)
 
@@ -219,7 +217,7 @@ class Indicator:
         menu.append(sep_item)
 
         quit_item = gtk.MenuItem('Quit')
-        quit_item.connect('activate', self.main.exit)
+        quit_item.connect('activate', self.fluxgui.exit)
         quit_item.show()
         menu.append(quit_item)
 
