@@ -18,6 +18,7 @@ def Warn(message):
     sys.stderr.write('Warning: %s\n' % message)
 
 class Fluxgui:
+    """Main application for fluxgui."""
     def __init__(self):
         self.pid_file = None
         self._check_pid()
@@ -104,6 +105,7 @@ class Fluxgui:
         self.xflux.sendline(command)
 
     def get_current_color_temp(self):
+        """Returns the current color temperature from xflux."""
         if self.xflux:
             self.xflux.sendline('c')
             index = self.xflux.expect('Color.*')
@@ -120,11 +122,14 @@ class Fluxgui:
 
     # Autostart code copied from AWN.
     def get_autostart_file_path(self):
+        """Returns the directory where autostart entries live."""
         autostart_dir = os.path.join(os.environ['HOME'], '.config',
                                      'autostart')
         return os.path.join(autostart_dir, 'fluxgui.desktop')
 
     def create_autostarter(self):
+        """Adds an entry to the autostart directory to start fluxgui on
+           startup."""
         autostart_file = self.get_autostart_file_path()
         autostart_dir = os.path.dirname(autostart_file)
 
@@ -148,6 +153,7 @@ class Fluxgui:
             self.settings.set_autostart(True)
 
     def delete_autostarter(self):
+        """Removes the autostart entry for fluxgui."""
         autostart_file = self.get_autostart_file_path()
         if os.path.isfile(autostart_file):
             os.remove(autostart_file)
@@ -166,6 +172,7 @@ class Fluxgui:
 
 
 class Indicator:
+    """Manages the GTK appindicator icon for fluxgui."""
 
     def __init__(self, fluxgui):
         self.fluxgui = fluxgui
@@ -195,6 +202,7 @@ class Indicator:
         self._setup_menu()
 
     def _setup_menu(self):
+        """Setups the menu for the indicator icon."""
         menu = gtk.Menu()
 
         pause_item = gtk.MenuItem('_Pause f.lux')
@@ -226,10 +234,12 @@ class Indicator:
         self.unpause_item = unpause_item
 
     def show_unpause(self):
+        """Shows the unpause xflux menu item and hides the other."""
         self.pause_item.hide()
         self.unpause_item.show()
 
     def show_pause(self):
+        """Shows the pause xflux menu item and hides the other."""
         self.pause_item.show()
         self.unpause_item.hide()
 
