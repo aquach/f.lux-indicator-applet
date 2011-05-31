@@ -16,7 +16,7 @@ from xdg.DesktopEntry import DesktopEntry
 
 __version__ = '1.1.8'
 
-XFLUX_DEBUG = 1
+XFLUX_DEBUG = 0
 
 def Warn(message):
     sys.stderr.write('Warning: %s\n' % message)
@@ -89,14 +89,15 @@ class Fluxgui(object):
             os.system('killall xflux > /dev/null 2>&1')
             xflux = pexpect.spawn('/usr/bin/xflux', args)
             time.sleep(0.1)
-            if not xflux.isalive() and ('-z' in args or '-l' in args):
-                # Something in the arguments made xflux close.
-                # xflux will close if run without -z or -l.
-                Warn(('xflux closed unexpectedly, check your fluxgui settings.'
-                      '\nArguments: %s') % ' '.join(args))
+            if not xflux.isalive():
+                if '-z' in args or '-l' in args:
+                    # Something in the arguments made xflux close.
+                    # xflux will close if run without -z or -l.
+                    Warn(('xflux closed unexpectedly, check your fluxgui '
+                          'settings.\nArguments: %s') % ' '.join(args))
                 xflux = None
 
-            if XFLUX_DEBUG:
+            if xflux and XFLUX_DEBUG:
                 xflux.logfile = file('/tmp/fluxgui.log', 'w')
         except pexpect.ExceptionPexpect:
             print '\nError: Please install xflux in /usr/bin/ \n'
@@ -115,7 +116,9 @@ class Fluxgui(object):
         """Returns the current color temperature from xflux."""
         if self.xflux:
             if not self.xflux.isalive():
-                Warn('xflux has exited.')
+                Warn('xflux has exited unexpectedly.')
+                self.xflux = None
+                return
             self.xflux.sendline('c')
             index = self.xflux.expect('Color.*')
             if index == 0:
@@ -123,10 +126,13 @@ class Fluxgui(object):
         return None
 
     def preview_xflux(self, unused_widget=None):
+        if not self.xflux.isalive():
+            Warn('xflux has exited unexpectedly.')
+            self.xflux = None
+            return
+
         temperature = Settings.get_temperature_from_index(
                         self.preferences.color_setting.get_active())
-        if not self.xflux.isalive():
-            Warn('xflux has exited.')
         self.xflux.sendline('k=%d' % temperature)
         self.xflux.sendline('p')
 
@@ -275,10 +281,7 @@ class Preferences(object):
         self.color_setting.set_active(int(self.fluxgui.settings.color_index))
 
         self.color_display = self.window_tree.get_widget('label6')
-        temperature = self.fluxgui.get_current_color_temp()
-        if temperature:
-            self.color_display.set_text('Current color temperature: '
-                                        + str(temperature) + 'K')
+        self._update_temperature()
 
         self.preview_button = self.window_tree.get_widget('button1')
         self.preview_button.connect('clicked', self.fluxgui.preview_xflux)
@@ -302,9 +305,16 @@ class Preferences(object):
             dialog.run()
             dialog.destroy()
 
+    def _update_temperature(self):
+        temperature = self.fluxgui.get_current_color_temp()
+        if temperature:
+            self.color_display.set_text('Current color temperature: '
+                                        + str(temperature) + 'K')
+
     def show(self, unused_widget=None):
         """Shows the preferences window."""
         self.window.present()
+        self._update_temperature()
 
     def hide(self, unused_widget=None):
         """Hides the preferences window and saves settings."""
