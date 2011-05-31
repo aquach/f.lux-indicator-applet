@@ -21,12 +21,14 @@ class Fluxgui:
 
         self.indicator = Indicator(self)
         self.settings = Settings(self)
+        self.preferences = None
 
         self.xflux = None
-        self.start_xflux()
+        self._start_xflux()
 
         if not self.settings.latitude and not self.settings.zipcode:
-            self.open_preferences('activate')
+            # Open preferences so user can enter settings.
+            self.open_preferences()
 
     def _check_pid(self):
         """Reads from the pid file to see if fluxgui is already running. Updates
@@ -57,69 +59,67 @@ class Fluxgui:
           file(pid_file, 'w').write('%d\n' % pid)
           self.pid_file = pid_file
 
-    def start_xflux(self):
-        args = ['-k', self.settings.color, '-nofork']
+    def _start_xflux(self):
+        """Starts xflux with the settings from the settings file."""
+        args = []
         if self.settings.zipcode:
             args.extend(['-z', self.settings.zipcode])
         if self.settings.latitude:
             args.extend(['-l', self.settings.latitude])
-            if lon:
+            if self.settings.longitude:
                 args.extend(['-g', self.settings.longitude])
+        args.extend(['-k', self.settings.color, '-nofork'])
 
+        self.indicator.show_pause()
+
+        xflux = None
         try:
-            self.xflux = pexpect.spawn('/usr/bin/xflux', args)
+            os.system('killall xflux > /dev/null 2>&1')
+            xflux = pexpect.spawn('/usr/bin/xflux', args)
 
             #fout = file('/tmp/fluxlogstr.txt', 'w')
             #self.xflux.logfile = fout
         except pexpect.ExceptionPexpect:
             print '\nError: Please install xflux in /usr/bin/ \n'
             self.exit()
+        self.xflux = xflux
 
-    def stop_xflux(self, item):
-        self.indicator.item_turn_off.hide()
-        self.indicator.item_turn_on.show()
+    def _stop_xflux(self):
+        """Stops xflux."""
+        self.indicator.show_unpause()
 
         if self.xflux:
-            # xflux is not running
-            try:
-                self.xflux.terminate(force=True)
-            except Exception:
-                # xflux has crashed in the meantime?
-                pass
+            self.xflux.terminate(force=True)
+            self.xflux = None
 
-    def pause_xflux(self, item):
-        self.indicator.item_turn_off.hide()
-        self.indicator.item_turn_on.show()
-        self.update_xflux('k=' + self.settings.get_color('4'))
+    def on_pause_xflux(self, unused_widget=None):
+        self._stop_xflux()
 
-    def unpause_xflux(self, item):
-        self.indicator.item_turn_off.show()
-        self.indicator.item_turn_on.hide()
-        self.update_xflux('k=' + self.settings.color)
+    def on_unpause_xflux(self, unused_widget=None):
+        self._start_xflux()
+        print self.xflux.isalive()
 
     def update_xflux(self, command):
         if self.xflux is None:
-            self.start_xflux(self.settings.latitude, self.settings.longitude,
-                         self.settings.zipcode, self.settings.color)
-        else:
-            self.xflux.sendline(command)
+            self._start_xflux()
+        self.xflux.sendline(command)
 
-    def get_colortemp(self):
+    def get_current_color_temp(self):
         if self.xflux:
             self.xflux.sendline('c')
             index = self.xflux.expect('Color.*')
             if index == 0:
-                self.color = self.xflux.after[10:14]
+                return int(self.xflux.after[10:14])
+        return None
 
-    def preview_xflux(self, item):
+    def preview_xflux(self):
       self.settings.set_colortemp(str(self.preferences.colsetting.get_active()))
       self.update_xflux('p')
 
-    def open_preferences(self, item):
-        self.get_colortemp()
+    def open_preferences(self, unused_widget=None):
         self.preferences = Preferences(self)
 
-    #autostart code copied from AWN
+    # Autostart code copied from AWN.
     def get_autostart_file_path(self):
         autostart_dir = os.path.join(os.environ['HOME'], '.config',
                                      'autostart')
@@ -130,12 +130,13 @@ class Fluxgui:
         autostart_dir = os.path.dirname(autostart_file)
 
         if not os.path.isdir(autostart_dir):
-            #create autostart dir
+            # Create autostart directory.
             try:
                 os.mkdir(autostart_dir)
-            except Exception, e:
-                print 'creation of autostart dir failed, please make it yourself: %s' % autostart_dir
-                raise e
+            except OSError:
+                print ('creation of autostart dir failed, please make it '
+                       'yourself: %s') % autostart_dir
+                self.exit()
 
         if not os.path.isfile(autostart_file):
             #create autostart entry
@@ -154,74 +155,85 @@ class Fluxgui:
             self.settings.set_autostart(False)
 
     def run(self):
+        """Main entry path for GTK application."""
         gtk.main()
 
-    def exit(self, unused_widget, unused_data=None):
-        self.stop_xflux('activate')
+    def exit(self, unused_object=None):
+        """Exits the application."""
+        self._stop_xflux()
         os.unlink(self.pid_file)
         gtk.main_quit()
         sys.exit(0)
+
 
 class Indicator:
 
     def __init__(self, main):
         self.main = main
-        self.setup_indicator()
 
-    def setup_indicator(self):
         self.indicator = appindicator.Indicator(
           'fluxgui-indicator',
           'fluxgui',
           appindicator.CATEGORY_APPLICATION_STATUS)
         self.indicator.set_status(appindicator.STATUS_ACTIVE)
 
-        # Check for special Ubuntu themes. copied from lookit
-
+        # Check for special Ubuntu themes (copied from lookit).
+        theme = None
         try:
-            theme = gtk.gdk.screen_get_default().get_setting('gtk-icon-theme-name')
+            default = gtk.gdk.screen_get_default()
+            theme = default.get_setting('gtk-icon-theme-name')
         except:
-            self.indicator.set_icon('fluxgui')
+            pass
+
+        if theme == 'ubuntu-mono-dark':
+          self.indicator.set_icon('fluxgui-dark')
+        elif theme == 'ubuntu-mono-light':
+            self.indicator.set_icon('fluxgui-light')
         else:
-          if theme == 'ubuntu-mono-dark':
-              self.indicator.set_icon('fluxgui-dark')
-          elif theme == 'ubuntu-mono-light':
-              self.indicator.set_icon('fluxgui-light')
-          else:
-              self.indicator.set_icon('fluxgui')
+            self.indicator.set_icon('fluxgui')
 
-        self.indicator.set_menu(self.setup_menu())
+        self.pause_item = None
+        self.unpause_item = None
+        self._setup_menu()
 
-    def setup_menu(self):
+    def _setup_menu(self):
         menu = gtk.Menu()
 
-        self.item_turn_off = gtk.MenuItem('_Pause f.lux')
-        self.item_turn_off.connect('activate', self.main.pause_xflux)
-        self.item_turn_off.show()
-        menu.append(self.item_turn_off)
+        pause_item = gtk.MenuItem('_Pause f.lux')
+        pause_item.connect('activate', self.main.on_pause_xflux)
+        pause_item.show()
+        menu.append(pause_item)
 
-        self.item_turn_on = gtk.MenuItem('_Unpause f.lux')
-        self.item_turn_on.connect('activate', self.main.unpause_xflux)
-        self.item_turn_on.hide()
-        menu.append(self.item_turn_on)
+        unpause_item = gtk.MenuItem('_Unpause f.lux')
+        unpause_item.connect('activate', self.main.on_unpause_xflux)
+        unpause_item.hide()
+        menu.append(unpause_item)
 
-        item = gtk.MenuItem('_Preferences')
-        item.connect('activate', self.main.open_preferences)
-        item.show()
-        menu.append(item)
+        prefs_item = gtk.MenuItem('_Preferences')
+        prefs_item.connect('activate', self.main.open_preferences)
+        prefs_item.show()
+        menu.append(prefs_item)
 
-        item = gtk.SeparatorMenuItem()
-        item.show()
-        menu.append(item)
+        sep_item = gtk.SeparatorMenuItem()
+        sep_item.show()
+        menu.append(sep_item)
 
-        item = gtk.MenuItem('Quit')
-        item.connect('activate', self.main.exit)
-        item.show()
-        menu.append(item)
+        quit_item = gtk.MenuItem('Quit')
+        quit_item.connect('activate', self.main.exit)
+        quit_item.show()
+        menu.append(quit_item)
 
-        return menu
+        self.indicator.set_menu(menu)
+        self.pause_item = pause_item
+        self.unpause_item = unpause_item
 
-    def main(self):
-        gtk.main()
+    def show_unpause(self):
+        self.pause_item.hide()
+        self.unpause_item.show()
+
+    def show_pause(self):
+        self.pause_item.show()
+        self.unpause_item.hide()
 
 
 class Preferences:
@@ -251,9 +263,10 @@ class Preferences:
         self.colsetting.set_active(int(self.main.settings.colortemp))
 
         self.colordisplay = self.wTree.get_widget('label6')
-        if self.main.color:
+        temperature = self.main.get_current_color_temp()
+        if temperature:
             self.colordisplay.set_text('Current color temperature: '
-                                       + self.main.color + 'K')
+                                       + temperature + 'K')
 
         self.previewbutton = self.wTree.get_widget('button1')
         self.previewbutton.connect('clicked', self.main.preview_xflux)
