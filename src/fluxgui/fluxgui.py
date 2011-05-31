@@ -6,6 +6,7 @@ import gtk
 import gtk.glade
 import gconf
 import sys
+import time
 import pexpect
 import os
 from xdg.DesktopEntry import DesktopEntry
@@ -13,6 +14,7 @@ from xdg.DesktopEntry import DesktopEntry
 
 __version__ = '1.1.8'
 
+XFLUX_DEBUG = 1
 
 def Warn(message):
     sys.stderr.write('Warning: %s\n' % message)
@@ -84,9 +86,16 @@ class Fluxgui(object):
         try:
             os.system('killall xflux > /dev/null 2>&1')
             xflux = pexpect.spawn('/usr/bin/xflux', args)
+            time.sleep(0.1)
+            if not xflux.isalive() and ('-z' in args or '-l' in args):
+                # Something in the arguments made xflux close.
+                # xflux will close if run without -z or -l.
+                Warn(('xflux closed unexpectedly, check your fluxgui settings.'
+                      '\nArguments: %s') % ' '.join(args))
+                xflux = None
 
-            #fout = file('/tmp/fluxlogstr.txt', 'w')
-            #self.xflux.logfile = fout
+            if XFLUX_DEBUG:
+                xflux.logfile = file('/tmp/fluxgui.log', 'w')
         except pexpect.ExceptionPexpect:
             print '\nError: Please install xflux in /usr/bin/ \n'
             self.exit()
@@ -103,18 +112,24 @@ class Fluxgui(object):
     def get_current_color_temp(self):
         """Returns the current color temperature from xflux."""
         if self.xflux:
+            if not self.xflux.isalive():
+                Warn('xflux has exited.')
             self.xflux.sendline('c')
             index = self.xflux.expect('Color.*')
             if index == 0:
                 return int(self.xflux.after[10:14])
         return None
 
-    def preview_xflux(self):
-        self.xflux.sendline('k=%d' % self.preferences.temperature)
-        self.update_xflux('p')
+    def preview_xflux(self, unused_widget=None):
+        temperature = Settings.get_temperature_from_index(
+                        self.preferences.color_setting.get_active())
+        if not self.xflux.isalive():
+            Warn('xflux has exited.')
+        self.xflux.sendline('k=%d' % temperature)
+        self.xflux.sendline('p')
 
     # Autostart code copied from AWN.
-    def get_autostart_file_path(self):
+    def _get_autostart_file_path(self):
         """Returns the directory where autostart entries live."""
         autostart_dir = os.path.join(os.environ['HOME'], '.config',
                                      'autostart')
@@ -123,7 +138,7 @@ class Fluxgui(object):
     def create_autostarter(self):
         """Adds an entry to the autostart directory to start fluxgui on
            startup."""
-        autostart_file = self.get_autostart_file_path()
+        autostart_file = self._get_autostart_file_path()
         autostart_dir = os.path.dirname(autostart_file)
 
         if not os.path.isdir(autostart_dir):
@@ -146,7 +161,7 @@ class Fluxgui(object):
 
     def delete_autostarter(self):
         """Removes the autostart entry for fluxgui."""
-        autostart_file = self.get_autostart_file_path()
+        autostart_file = self._get_autostart_file_path()
         if os.path.isfile(autostart_file):
             os.remove(autostart_file)
 
@@ -245,7 +260,7 @@ class Preferences(object):
         self.window_tree = gtk.glade.XML(self.gladefile)
 
         self.window = self.window_tree.get_widget('window1')
-        self.window.connect('destroy', self.hide_event)
+        self.window.connect('destroy', self.hide)
 
         self.lat_setting = self.window_tree.get_widget('entry1')
         self.lat_setting.set_text(self.fluxgui.settings.latitude)
@@ -269,7 +284,7 @@ class Preferences(object):
         self.preview_button.connect('clicked', self.fluxgui.preview_xflux)
 
         self.close_button = self.window_tree.get_widget('button2')
-        self.close_button.connect('clicked', self.hide_event)
+        self.close_button.connect('clicked', self.hide)
 
         self.autostart = self.window_tree.get_widget('checkbutton1')
         self.autostart.set_active(self.fluxgui.settings.autostart == '1')
@@ -378,9 +393,8 @@ class Settings(object):
     def color_index(self, color_index):
         self.client.set_string(self.prefs_key + '/colortemp', str(color_index))
 
-    @property
-    def temperature(self):
-        index = self.color_index
+    @staticmethod
+    def get_temperature_from_index(index):
         if index == 0:
             # Tungsten
             return 2700
@@ -398,6 +412,10 @@ class Settings(object):
             return 6500
 
         return 3400
+
+    @property
+    def temperature(self):
+        return Settings.get_temperature_from_index(self.color_index)
 
 
 if __name__ == '__main__':
