@@ -11,68 +11,69 @@ import os
 from xdg.DesktopEntry import DesktopEntry
 
 
-__version__ = "1.1.8"
+__version__ = '1.1.8'
 
 
 class Fluxgui:
     def __init__(self):
-        self.check_pid()
-        self.indicator = Indicator(self)
+        self.pid_file = None
+        self._check_pid()
 
-        self.color = None;
+        self.indicator = Indicator(self)
         self.settings = Settings(self)
-        self.start_xflux(self.settings.latitude, self.settings.longitude,
-                         self.settings.zipcode, self.settings.color)
+
+        self.xflux = None
+        self.start_xflux()
 
         if not self.settings.latitude and not self.settings.zipcode:
-            self.open_preferences("activate")
+            self.open_preferences('activate')
 
-    def check_pid(self):
+    def _check_pid(self):
+        """Reads from the pid file to see if fluxgui is already running. Updates
+           the pid file with the current process's pid."""
         pid = os.getpid()
-        self.pidfile = os.path.expanduser("~/.fluxgui.pid")
+        pid_file = os.path.expanduser('~/.fluxgui.pid')
 
-        running = False # Innocent...
-        if os.path.isfile(self.pidfile):
+        running = False
+        if os.path.isfile(pid_file):
           try:
-            oldpid = int(open(self.pidfile).readline().rstrip())
+            oldpid = int(open(pid_file).readline().rstrip())
             try:
+              # Check for process existence.
               os.kill(oldpid, 0)
-              running = True # ...until proven guilty
+              running = True
             except OSError as err:
               if err.errno == errno.ESRCH:
                 # OSError: [Errno 3] No such process
-                print "stale pidfile, old pid: ", oldpid
+                print 'stale pid_file, old pid: ', oldpid
           except ValueError:
-            # Corrupt pidfile, empty or not an int on first line
+            # Corrupt pid_file, empty or not an int on first line
             pass
+
         if running:
-          print "fluxgui is already running, exiting"
+          print 'fluxgui is already running, exiting'
           sys.exit()
         else:
-          file(self.pidfile, 'w').write("%d\n" % pid)
+          file(pid_file, 'w').write('%d\n' % pid)
+          self.pid_file = pid_file
 
-    def start_xflux(self, lat, lon, zipcode, color):
-        args = []
-        if zipcode:
-            args = ["-z", zipcode, "-k", color, '-nofork']
-        if lat:
-            args = ["-l", lat, "-k", color, '-nofork']
+    def start_xflux(self):
+        args = ['-k', self.settings.color, '-nofork']
+        if self.settings.zipcode:
+            args.extend(['-z', self.settings.zipcode])
+        if self.settings.latitude:
+            args.extend(['-l', self.settings.latitude])
             if lon:
-                args = ["-l", lat, "-g", lon, "-k", color, '-nofork']
+                args.extend(['-g', self.settings.longitude])
 
-        if args:
-            try:
-                self.xflux = pexpect.spawn("/usr/bin/xflux", args)
+        try:
+            self.xflux = pexpect.spawn('/usr/bin/xflux', args)
 
-                #fout = file('/tmp/fluxlogstr.txt', 'w')
-                #self.xflux.logfile = fout
-
-            except pexpect.ExceptionPexpect:
-                print "\nError: Please install xflux in /usr/bin/ \n"
-                os.unlink(self.pidfile)
-                sys.exit(2)
-        else:
-            self.xflux = None
+            #fout = file('/tmp/fluxlogstr.txt', 'w')
+            #self.xflux.logfile = fout
+        except pexpect.ExceptionPexpect:
+            print '\nError: Please install xflux in /usr/bin/ \n'
+            self.exit()
 
     def stop_xflux(self, item):
         self.indicator.item_turn_off.hide()
@@ -89,12 +90,12 @@ class Fluxgui:
     def pause_xflux(self, item):
         self.indicator.item_turn_off.hide()
         self.indicator.item_turn_on.show()
-        self.update_xflux("k=" + self.settings.get_color("4"))
+        self.update_xflux('k=' + self.settings.get_color('4'))
 
     def unpause_xflux(self, item):
         self.indicator.item_turn_off.show()
         self.indicator.item_turn_on.hide()
-        self.update_xflux("k=" + self.settings.color)
+        self.update_xflux('k=' + self.settings.color)
 
     def update_xflux(self, command):
         if self.xflux is None:
@@ -105,14 +106,14 @@ class Fluxgui:
 
     def get_colortemp(self):
         if self.xflux:
-            self.xflux.sendline("c")
-            index = self.xflux.expect("Color.*")
+            self.xflux.sendline('c')
+            index = self.xflux.expect('Color.*')
             if index == 0:
                 self.color = self.xflux.after[10:14]
 
     def preview_xflux(self, item):
       self.settings.set_colortemp(str(self.preferences.colsetting.get_active()))
-      self.update_xflux("p")
+      self.update_xflux('p')
 
     def open_preferences(self, item):
         self.get_colortemp()
@@ -133,7 +134,7 @@ class Fluxgui:
             try:
                 os.mkdir(autostart_dir)
             except Exception, e:
-                print "creation of autostart dir failed, please make it yourself: %s" % autostart_dir
+                print 'creation of autostart dir failed, please make it yourself: %s' % autostart_dir
                 raise e
 
         if not os.path.isfile(autostart_file):
@@ -155,9 +156,9 @@ class Fluxgui:
     def run(self):
         gtk.main()
 
-    def exit(self, widget, data=None):
-        self.stop_xflux("activate")
-        os.unlink(self.pidfile)
+    def exit(self, unused_widget, unused_data=None):
+        self.stop_xflux('activate')
+        os.unlink(self.pid_file)
         gtk.main_quit()
         sys.exit(0)
 
@@ -169,8 +170,8 @@ class Indicator:
 
     def setup_indicator(self):
         self.indicator = appindicator.Indicator(
-          "fluxgui-indicator",
-          "fluxgui",
+          'fluxgui-indicator',
+          'fluxgui',
           appindicator.CATEGORY_APPLICATION_STATUS)
         self.indicator.set_status(appindicator.STATUS_ACTIVE)
 
@@ -193,18 +194,18 @@ class Indicator:
     def setup_menu(self):
         menu = gtk.Menu()
 
-        self.item_turn_off = gtk.MenuItem("_Pause f.lux")
-        self.item_turn_off.connect("activate", self.main.pause_xflux)
+        self.item_turn_off = gtk.MenuItem('_Pause f.lux')
+        self.item_turn_off.connect('activate', self.main.pause_xflux)
         self.item_turn_off.show()
         menu.append(self.item_turn_off)
 
-        self.item_turn_on = gtk.MenuItem("_Unpause f.lux")
-        self.item_turn_on.connect("activate", self.main.unpause_xflux)
+        self.item_turn_on = gtk.MenuItem('_Unpause f.lux')
+        self.item_turn_on.connect('activate', self.main.unpause_xflux)
         self.item_turn_on.hide()
         menu.append(self.item_turn_on)
 
-        item = gtk.MenuItem("_Preferences")
-        item.connect("activate", self.main.open_preferences)
+        item = gtk.MenuItem('_Preferences')
+        item.connect('activate', self.main.open_preferences)
         item.show()
         menu.append(item)
 
@@ -212,8 +213,8 @@ class Indicator:
         item.show()
         menu.append(item)
 
-        item = gtk.MenuItem("Quit")
-        item.connect("activate", self.main.exit)
+        item = gtk.MenuItem('Quit')
+        item.connect('activate', self.main.exit)
         item.show()
         menu.append(item)
 
@@ -228,60 +229,60 @@ class Preferences:
     def __init__(self, main):
         self.main = main
         self.gladefile = os.path.join(os.path.dirname(os.path.dirname(
-          os.path.realpath(__file__))), "fluxgui/preferences.glade")
+          os.path.realpath(__file__))), 'fluxgui/preferences.glade')
         self.wTree = gtk.glade.XML(self.gladefile)
 
-        self.window = self.wTree.get_widget("window1")
-        self.window.connect("destroy", self.delete_event)
+        self.window = self.wTree.get_widget('window1')
+        self.window.connect('destroy', self.delete_event)
 
-        self.latsetting = self.wTree.get_widget("entry1")
+        self.latsetting = self.wTree.get_widget('entry1')
         self.latsetting.set_text(self.main.settings.latitude)
-        self.latsetting.connect("activate", self.delete_event)
+        self.latsetting.connect('activate', self.delete_event)
 
-        self.lonsetting = self.wTree.get_widget("entry3")
+        self.lonsetting = self.wTree.get_widget('entry3')
         self.lonsetting.set_text(self.main.settings.longitude)
-        self.lonsetting.connect("activate", self.delete_event)
+        self.lonsetting.connect('activate', self.delete_event)
 
-        self.zipsetting = self.wTree.get_widget("entry2")
+        self.zipsetting = self.wTree.get_widget('entry2')
         self.zipsetting.set_text(self.main.settings.zipcode)
-        self.zipsetting.connect("activate", self.delete_event)
+        self.zipsetting.connect('activate', self.delete_event)
 
-        self.colsetting = self.wTree.get_widget("combobox1")
+        self.colsetting = self.wTree.get_widget('combobox1')
         self.colsetting.set_active(int(self.main.settings.colortemp))
 
-        self.colordisplay = self.wTree.get_widget("label6")
+        self.colordisplay = self.wTree.get_widget('label6')
         if self.main.color:
-            self.colordisplay.set_text("Current color temperature: "
-                                       + self.main.color + "K")
+            self.colordisplay.set_text('Current color temperature: '
+                                       + self.main.color + 'K')
 
-        self.previewbutton = self.wTree.get_widget("button1")
-        self.previewbutton.connect("clicked", self.main.preview_xflux)
+        self.previewbutton = self.wTree.get_widget('button1')
+        self.previewbutton.connect('clicked', self.main.preview_xflux)
 
 
-        self.closebutton = self.wTree.get_widget("button2")
-        self.closebutton.connect("clicked", self.delete_event)
+        self.closebutton = self.wTree.get_widget('button2')
+        self.closebutton.connect('clicked', self.delete_event)
 
-        self.autostart = self.wTree.get_widget("checkbutton1")
-        if self.main.settings.autostart == "1":
+        self.autostart = self.wTree.get_widget('checkbutton1')
+        if self.main.settings.autostart == '1':
             self.autostart.set_active(True)
         else:
             self.autostart.set_active(False)
 
         if not self.main.settings.latitude and not self.main.settings.zipcode:
-            message = ("The f.lux indicator applet needs to know your latitude "
-                       "and longitude or zipcode to work correctly. Please "
-                       "fill either of them in on the next screen and then hit "
-                       "enter.")
+            message = ('The f.lux indicator applet needs to know your latitude '
+                       'and longitude or zipcode to work correctly. Please '
+                       'fill either of them in on the next screen and then hit '
+                       'enter.')
             md = gtk.MessageDialog(self.window, gtk.DIALOG_DESTROY_WITH_PARENT,
                                    gtk.MESSAGE_INFO, gtk.BUTTONS_OK, message)
-            md.set_title("f.lux indicator applet")
+            md.set_title('f.lux indicator applet')
             md.run()
             md.destroy()
             self.window.show()
         else:
             self.window.show()
 
-    def delete_event(self, widget, data=None):
+    def delete_event(self, widget, unused_data=None):
         if self.main.settings.latitude != self.latsetting.get_text():
             self.main.settings.set_latitude(self.latsetting.get_text())
 
@@ -311,99 +312,98 @@ class Settings:
     def __init__(self, main):
         self.main = main
         self.client = gconf.client_get_default()
-        self.prefs_key = "/apps/fluxgui"
+        self.prefs_key = '/apps/fluxgui'
         self.client.add_dir(self.prefs_key, gconf.CLIENT_PRELOAD_NONE)
 
-        self.autostart = self.client.get_string(self.prefs_key + "/autostart")
-        self.latitude = self.client.get_string(self.prefs_key + "/latitude")
-        self.longitude = self.client.get_string(self.prefs_key + "/longitude")
-        self.zipcode = self.client.get_string(self.prefs_key + "/zipcode")
-        self.colortemp = self.client.get_string(self.prefs_key + "/colortemp")
+        self.autostart = self.client.get_string(self.prefs_key + '/autostart')
+        self.latitude = self.client.get_string(self.prefs_key + '/latitude')
+        self.longitude = self.client.get_string(self.prefs_key + '/longitude')
+        self.zipcode = self.client.get_string(self.prefs_key + '/zipcode')
+        self.colortemp = self.client.get_string(self.prefs_key + '/colortemp')
         self.color = self.get_color(self.colortemp)
 
         if self.latitude is None:
-            self.latitude = ""
+            self.latitude = ''
 
         if self.longitude is None:
-            self.longitude = ""
+            self.longitude = ''
 
         if self.zipcode is None:
-            self.zipcode = ""
+            self.zipcode = ''
 
         if not self.colortemp:
-            self.colortemp = "1"
+            self.colortemp = '1'
 
         if not self.autostart:
-            self.autostart = "0"
+            self.autostart = '0'
 
     def set_latitude(self, latitude):
-        self.client.set_string(self.prefs_key + "/latitude", latitude)
+        self.client.set_string(self.prefs_key + '/latitude', latitude)
         self.latitude = latitude
 
-        command = "l=" + latitude
+        command = 'l=' + latitude
         self.main.update_xflux(command)
 
     def set_longitude(self, longitude):
-        self.client.set_string(self.prefs_key + "/longitude", longitude)
+        self.client.set_string(self.prefs_key + '/longitude', longitude)
         self.longitude = longitude
 
-        command = "g=" + longitude
+        command = 'g=' + longitude
         self.main.update_xflux(command)
 
     def set_zipcode(self, zipcode):
-        self.client.set_string(self.prefs_key + "/zipcode", zipcode)
+        self.client.set_string(self.prefs_key + '/zipcode', zipcode)
         self.zipcode = zipcode
 
-        command = "z=" + zipcode
+        command = 'z=' + zipcode
         self.main.update_xflux(command)
 
     def get_color(self, colortemp):
-        color = "3400"
-        if colortemp == "0":
+        color = '3400'
+        if colortemp == '0':
             # Tungsten
-            color = "2700"
-        elif colortemp == "1":
+            color = '2700'
+        elif colortemp == '1':
             # Halogen
-            color = "3400"
-        elif colortemp == "2":
+            color = '3400'
+        elif colortemp == '2':
             # Fluorescent
-            color = "4200"
-        elif colortemp == "3":
+            color = '4200'
+        elif colortemp == '3':
             # Daylight
-            color = "5000"
-        elif colortemp == "4":
+            color = '5000'
+        elif colortemp == '4':
             # Off
-            color = "6500"
+            color = '6500'
 
         return color
 
     def set_colortemp(self, colortemp):
         color = self.get_color(colortemp)
 
-        self.client.set_string(self.prefs_key + "/colortemp", colortemp)
+        self.client.set_string(self.prefs_key + '/colortemp', colortemp)
         self.colortemp = colortemp
         self.color = color
 
-        command = "k=" + color
+        command = 'k=' + color
         self.main.update_xflux(command)
 
     def set_autostart(self, autostart):
         if autostart:
-            self.client.set_string(self.prefs_key + "/autostart", "1")
-            self.autostart = "1"
+            self.client.set_string(self.prefs_key + '/autostart', '1')
+            self.autostart = '1'
         else:
-            self.client.set_string(self.prefs_key + "/autostart", "0")
-            self.autostart = "0"
+            self.client.set_string(self.prefs_key + '/autostart', '0')
+            self.autostart = '0'
 
     def main(self):
         gtk.main()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     try:
         app = Fluxgui()
         app.run()
     except KeyboardInterrupt:
-        app.stop_xflux("activate")
-        os.unlink(app.pidfile)
+        app.exit()
 
