@@ -100,11 +100,6 @@ class Fluxgui(object):
             self.xflux.terminate(force=True)
             self.xflux = None
 
-    def update_xflux(self, command):
-        if self.xflux is None:
-            self.start_xflux()
-        self.xflux.sendline(command)
-
     def get_current_color_temp(self):
         """Returns the current color temperature from xflux."""
         if self.xflux:
@@ -115,8 +110,8 @@ class Fluxgui(object):
         return None
 
     def preview_xflux(self):
-      self.settings.set_colortemp(str(self.preferences.colsetting.get_active()))
-      self.update_xflux('p')
+        self.xflux.sendline('k=%d' % self.preferences.temperature)
+        self.update_xflux('p')
 
     # Autostart code copied from AWN.
     def get_autostart_file_path(self):
@@ -187,7 +182,7 @@ class Indicator(object):
             self.indicator.set_icon('fluxgui')
         else:
             if theme == 'ubuntu-mono-dark':
-              self.indicator.set_icon('fluxgui-dark')
+                self.indicator.set_icon('fluxgui-dark')
             elif theme == 'ubuntu-mono-light':
                 self.indicator.set_icon('fluxgui-light')
             else:
@@ -212,7 +207,7 @@ class Indicator(object):
         menu.append(unpause_item)
 
         prefs_item = gtk.MenuItem('_Preferences')
-        prefs_item.connect('activate', self.fluxgui.preferences.show_event)
+        prefs_item.connect('activate', self.fluxgui.preferences.show)
         prefs_item.show()
         menu.append(prefs_item)
 
@@ -279,7 +274,8 @@ class Preferences(object):
         self.autostart = self.window_tree.get_widget('checkbutton1')
         self.autostart.set_active(self.fluxgui.settings.autostart == '1')
 
-        if not self.fluxgui.settings.latitude and not self.fluxgui.settings.zipcode:
+        if (not self.fluxgui.settings.latitude and
+            not self.fluxgui.settings.zipcode):
             message = ('The f.lux indicator applet needs to know your latitude '
                        'and longitude or zipcode to work correctly. Please '
                        'fill either of them in on the next screen and then hit '
@@ -290,10 +286,10 @@ class Preferences(object):
             md.run()
             md.destroy()
 
-    def show_event(self, unused_widget=None):
+    def show(self, unused_widget=None):
         self.window.present()
 
-    def hide_event(self, unused_widget=None):
+    def hide(self, unused_widget=None):
         self.update_settings()
         self.window.hide()
 
